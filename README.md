@@ -1,3 +1,53 @@
+compile:
+
+cd src/AutoHyper
+dotnet build -c "release" -o ../../app
+cd ../..
+
+app/AutoHyper -bp ./benchmarks/bp/concur_p1_1bit.txt ./benchmarks/bp/gni.txt
+
+app/AutoHyper -bp ./benchmarks/planning/robotic_sp_3600.smv ./benchmarks/planning/robotic_sp_formula.hq
+
+https://users.abo.fi/jboling/cdes/op_on_aut.pdf
+
+Transition system state{evacuation}, the evacuation will become label when becoming NBA 
+NBA state{evacuation}, the evacuation does not have any meanings. 
+
+
+1. hyperLTL - ABW (alternating BW) (A1) 
+   system - ABW ｜ ACBW
+
+   (system -> NBA 应该是有的)
+
+   task 1: NBA -> ABW  (http://adl.github.io/hoaf/index.html) 
+        把所有一样的出边到达的states变成disjunction
+   task 2: hyperLTL -> ABW 
+   task 3: NBA -> ACBW (https://www.cs.huji.ac.il/~ornak/publications/istcs97.pdf) page 12. 
+       在ABW的基础上, 把{0}全部删掉
+       再找一下怎么取反，因为 complement(ABW) = 想要的那个 ACBW
+
+
+2. property = ACBW (奇数) ｜ ABW (偶数) 
+   eg. A, 只需要转一次的情况，A1 转成 ACBW
+
+* 奇数和偶数是根据A的个数来变，因为要用 A 变成 E 
+
+3. system = ACBW (奇数) ｜ ABW (偶数) 
+    和property的储存形式保持一致
+    只有一个system, 储存两种表达形式
+
+5. Negation: ACBW -> ABW
+             ABW -> ACBW
+
+4. Product + Projection     
+          : ACBW * ACBW : ACBW
+            ABW * ABW : ABW 
+因为最后一个quantifier 已经是E了，所以最后的product是根据最后一个trace和system的交集来实现的，
+然后再把最后一列删掉.
+
+
+
+
 # AutoHyper: Explicit-State Model Checking for HyperLTL
 
 This repository contains **AutoHyper** (short for either "**Auto**mata-based Model Checking of **Hyper**LTL" or "Fully **Auto**matic **Hyper**LTL Model Checking"), a tool that can model check HyperLTL properties on finite-state systems. 

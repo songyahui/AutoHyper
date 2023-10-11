@@ -1,4 +1,4 @@
 {
-    "autfilt":"<...>/autfilt",
-    "ltl2tgba":"<...>/ltl2tgba"
+    "autfilt":"spot-2.11.1/bin/autfilt",
+    "ltl2tgba":"spot-2.11.1/bin/ltl2tgba"
 }
