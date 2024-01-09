@@ -4,9 +4,9 @@ cd src/AutoHyper
 dotnet build -c "release" -o ../../app
 cd ../..
 
-app/AutoHyper -bp ./benchmarks/bp/concur_p1_1bit.txt ./benchmarks/bp/gni.txt
+app/AutoHyper --debug --bp ./benchmarks/bp/concur_p1_1bit.txt ./benchmarks/bp/gni.txt
 
-app/AutoHyper -bp ./benchmarks/planning/robotic_sp_3600.smv ./benchmarks/planning/robotic_sp_formula.hq
+app/AutoHyper --debug --bp ./benchmarks/planning/robotic_sp_3600.smv ./benchmarks/planning/robotic_sp_formula.hq
 
 https://users.abo.fi/jboling/cdes/op_on_aut.pdf
 
@@ -14,17 +14,101 @@ Transition system state{evacuation}, the evacuation will become label when becom
 NBA state{evacuation}, the evacuation does not have any meanings. 
 
 
+TODO:
+>>>>>> FIND l0-l5 AND H/L/O mapping (done)
+
+            let dict, revDict = 
+                ltl 
+                |> LTL.allAtoms
+                |> Set.toList
+                |> List.mapi (fun i x -> 
+                    let (xl, xs) = x 
+                    let a = "l" + string i
+                    // This prints out the mapping from var-trace ~~~> label
+                    printfn$"\n(mapping: %s{xl}-%d{xs} ~~> %s{a})" 
+                    (x, a), (a, x))
+                |> List.unzip
+                |> fun (x, y) -> Map.ofList x, Map.ofList y
+
+
+>>>>>> TRANSITION store 
+
+(relevantAps: h-0)
+
+(relevantAps: l-0)
+
+(relevantAps: o-0)
+
+(TransitionSystem: aps "h_0" "l_0" "o_0" 
+init 0 
+--BODY--
+State: 0 {}
+1 
+State: 1 {2}
+2 
+State: 2 {2}
+3 4 
+State: 3 {2}
+5 
+State: 4 {0 2}
+6 
+State: 5 {2}
+7 
+State: 6 {0 2}
+8 
+State: 7 {}
+9 
+State: 8 {0}
+10 
+State: 9 {}
+11 12 
+State: 10 {0}
+11 12 
+State: 11 {}
+13 
+State: 12 {0}
+14 
+State: 13 {}
+1 
+State: 14 {0}
+15 
+State: 15 {0 2}
+16 
+State: 16 {0 2}
+3 4 
+--END--
+)
+Compiled Program to explicit-state TS (72ms)
+Compiled Program to explicit-state TS (73ms)
+System sizes: [17; 17; 17]
+Computed bisimulation quotient (61ms)
+System sizes: [16; 16; 16]
+Starting LTL2NBA...
+(mapping: h_0-0 ~~> l0)
+
+(mapping: h_0-2 ~~> l1)
+
+(mapping: l_0-1 ~~> l2)
+
+(mapping: l_0-2 ~~> l3)
+
+(mapping: o_0-1 ~~> l4)
+
+(mapping: o_0-2 ~~> l5)
+
+>>>>>> run T and NBA FOR THE FIRST LABEL. 
+
 1. hyperLTL - ABW (alternating BW) (A1) 
    system - ABW ｜ ACBW
 
    (system -> NBA 应该是有的)
 
    task 1: NBA -> ABW  (http://adl.github.io/hoaf/index.html) 
-        把所有一样的出边到达的states变成disjunction
+        把所有一样的出边到达的states变成disjunction (check)
    task 2: hyperLTL -> ABW 
    task 3: NBA -> ACBW (https://www.cs.huji.ac.il/~ornak/publications/istcs97.pdf) page 12. 
        在ABW的基础上, 把{0}全部删掉
-       再找一下怎么取反，因为 complement(ABW) = 想要的那个 ACBW
+       再找一下怎么取反，因为 complement(ABW) = 想要的那个 ACBW (check)
 
 
 2. property = ACBW (奇数) ｜ ABW (偶数) 

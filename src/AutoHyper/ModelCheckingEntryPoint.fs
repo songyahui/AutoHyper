@@ -19,8 +19,11 @@ module ModelCheckingEntryPoint
 
 open System
 open System.IO
-
+open System.Collections.Generic
 open FsOmegaLib.LTL
+open FsOmegaLib.NBA
+open FsOmegaLib.Operations
+open FsOmegaLib.SAT
 
 open TransitionSystemLib.TransitionSystem
 open TransitionSystemLib.SymbolicSystem
@@ -30,6 +33,186 @@ open RunConfiguration
 open HyperLTL
 open HyperLTL.SymbolicHyperLTL
 open ModelChecking
+
+
+let private string_of_set_elements (list: Set<int>)  =
+    list 
+        |> Set.map (fun x -> string x)
+        |> Set.toList
+        |> Util.combineStringsWithSeperator " "
+
+let private findNextStatesFromTransitionSystem (ts : TransitionSystem<String>)  (current: Set<int>) = 
+    let mutable NextStates = Set.empty 
+    for s in ts.States do
+        //printfn "current * s: %s, %d" (string_of_set_elements current ) s
+
+        if Set.exists (fun i -> i = s) current then 
+            let (sucs:Set<int>) = ts.Edges.[s]
+            for x in sucs do 
+                NextStates <- NextStates.Add x                
+        else ()  
+    //printfn "Sys: %s" (string_of_set_elements NextStates )
+    NextStates
+
+
+
+let private findNextStatesFromNBA (nba : NBA<int, (String * int)>) (current: Set<int>) = 
+    let mutable NextStates = Set.empty 
+    for s in nba.States do
+        if Set.exists (fun i -> i = s) current then 
+            let sucs = nba.Edges.[s]
+            for (g, n') in sucs do 
+                NextStates <- NextStates.Add n'
+              //  s.WriteLine("[" + DNF.print g + "] " + stateStringer(n')) 
+        else ()  
+    //printfn "NBA: %s" (string_of_set_elements NextStates )
+    NextStates
+
+
+let private existRecord (memorization:Dictionary<int, (Set<int> * Set<int>)>) (systemStates: Set<int>) (nbaStates: Set<int>) =
+
+    let length = memorization.Count - 1
+
+    let mutable Return = false 
+
+    for i in 0 .. length do 
+
+        let (csys, cnba) = memorization[i]
+        //printfn "csys %s" (string_of_set_elements systemStates)
+        //printfn "cnba %s" (string_of_set_elements nbaStates)
+
+        if Set.isSubset systemStates csys && Set.isSubset nbaStates cnba then 
+            Return <- true 
+        else ()
+
+    Return
+
+
+let rec private brutal_force_approach 
+    (quantifiers:list<TraceQuantifierType>) 
+    (mappings:list<(String * int)>) 
+    (config : Configuration) 
+    (ts : TransitionSystem<String>) 
+    (nba : NBA<int, (String * int)>) (m : Mode) = 
+    
+
+
+    if quantifiers.Length = 2 then true 
+    else 
+        match quantifiers.Head with 
+        | EXISTS -> 
+            printfn$"\n(Current quantifier: exists)"  
+            (* TBD *)
+            brutal_force_approach (quantifiers.Tail) mappings config ts nba m 
+        | FORALL -> 
+            printfn$"\n(Current quantifier: forall)" 
+            let memorization = new Dictionary<int, (Set<int> * Set<int>)>() 
+            let printing = TransitionSystem.print (fun a -> a) ts
+            printfn$"\n(system_After_bisim: %s{printing})" 
+
+            let stateStringer = (fun a-> string a) 
+            let alphStringer = (fun (a, i) -> a + "_" + string i)
+            let s = new StringWriter() 
+            s.WriteLine("HOA: v1")
+            s.WriteLine ("States: " + string(nba.States.Count))
+            for n in nba.InitialStates do 
+                s.WriteLine ("Start: " + stateStringer(n))
+            s.WriteLine ("AP: " + string(nba.APs.Length) + " " + List.fold (fun s x -> s + " \"" + alphStringer(x) + "\"") "" nba.APs)
+            for n in nba.States do 
+                let edges = nba.Edges.[n]
+                let accString = 
+                    if nba.AcceptingStates.Contains n then 
+                        "{0}"
+                    else 
+                        ""
+                s.WriteLine("State: " + stateStringer(n) + " " + accString)
+                for (g, n') in edges do 
+                    s.WriteLine("[" + DNF.print g + "] " + stateStringer(n'))
+            // let nbaprinting = NBA.toHoaString (fun a-> string a) (fun (a, i) -> a + "_" + string i) nba
+            printfn$"\n(nba_printing: %s{s.ToString()})" 
+
+
+            // mapping from var_trace -> labels, e.g., (mapping: h_0-0 ~~> l0)
+            mappings 
+            |> List.mapi (fun i (xl, xs) -> 
+                let a = "l" + string i
+                printfn$"\n(mapping: %s{xl}-%d{xs} ~~> %s{a})")
+
+            memorization.Add (0, (ts.InitialStates, nba.InitialStates)) 
+
+
+            let mutable Index = 0 
+            let mutable Break = false
+
+            while not Break do
+                let (systemStates, nbaStates) = memorization[Index]
+
+
+                let (nextSystemStates:Set<int>) = findNextStatesFromTransitionSystem ts systemStates                
+
+                let (nextNbaStates:Set<int>) = findNextStatesFromNBA nba nbaStates
+
+                if existRecord memorization nextSystemStates nextNbaStates then Break <- true
+                else 
+                    Index <- Index + 1
+                    memorization.Add (Index, (nextSystemStates, nextNbaStates)) 
+
+                // let temp = string_of_set_elements systemStates 
+
+            let c = memorization.Count
+            for pair in memorization do
+                printfn "%A" pair
+
+            brutal_force_approach (quantifiers.Tail) mappings config ts nba m 
+
+
+
+
+let private verify_prime (config : Configuration) (tslist : list<TransitionSystem<String>>) (hyperltl : HyperLTL<String>) (m : Mode) = 
+    printfn$"\n===========================================================" 
+    printfn$"=================== Start of SYH's Code ===================" 
+    printfn$"===========================================================\n" 
+
+    let swtotal = System.Diagnostics.Stopwatch()
+    swtotal.Start()
+
+    // print the system
+    let system = tslist[0] 
+
+    //let property = HyperLTL.print (fun a -> a) hyperltl
+    //printfn$"\n(property: %s{property})" 
+
+    let quantifiers = hyperltl.QuantifierPrefix 
+    let (ltl :  LTL<'L * int>) = hyperltl.LTLMatrix
+
+    let (mappings : list<String*int> ) = 
+        ltl 
+        |> LTL.allAtoms
+        |> Set.toList
+
+    // get the property's NBA
+    let (nba  : NBA<int, (String * int)>) = 
+        match FsOmegaLib.Operations.LTLConversion.convertLTLtoNBA Util.DEBUG config.SolverConfig.MainPath config.SolverConfig.Ltl2tgbaPath.Value ltl with 
+        | Success aut -> aut 
+        | Fail err -> 
+            config.LoggerN err.DebugInfo
+            raise <| AnalysisException err.Info
+
+    let res = brutal_force_approach quantifiers mappings config system nba m 
+
+
+    if res then 
+        printfn "\nSAT (brutal_force_approach)\n"
+    else
+        printfn "\nUNSAT (brutal_force_approach)\n"
+
+    swtotal.Stop()
+    config.LoggerN $"End of SYH code time: %i{swtotal.ElapsedMilliseconds}ms (~=%.2f{double(swtotal.ElapsedMilliseconds) / 1000.0}s)"
+    printfn$"\n========================================================" 
+    printfn$"================== End of SYH's Code ===================" 
+    printfn$"========================================================\n" 
+
+
 
 let private verify config (tslist : list<TransitionSystem<String>>) (hyperltl : HyperLTL<String>) (m : Mode) = 
     let res, t = ModelChecking.modelCheck config tslist hyperltl m
@@ -46,6 +229,7 @@ let private verify config (tslist : list<TransitionSystem<String>>) (hyperltl : 
     
     config.LoggerN $"Model-checking time: %i{t.TotalTime}ms (~=%.2f{double(t.TotalTime) / 1000.0}s)"
 
+    verify_prime config tslist hyperltl m 
 
 let explictSystemVerification (config : Configuration) systemPaths propPath m  = 
     let sw: System.Diagnostics.Stopwatch = System.Diagnostics.Stopwatch()
@@ -376,13 +560,25 @@ let booleanProgramVerification (config: Configuration) systemPaths propPath m  =
                 
             relevantAps
             |> List.iter (fun (v, i) ->
+                printfn$"\n(relevantAps: %s{v}-%d{i})" 
                 if prog.DomainMap.ContainsKey v && prog.DomainMap.[v] > i |> not then
                     raise <| AnalysisException $"AP (%A{v}, %i{i}) is used in the HyperLTL property but variable %A{v} does not exists or has not the required bit width"
                 )
 
             let ts = 
                 BooleanProgram.convertBooleanProgramToTransitionSystem prog relevantAps
-                |> TransitionSystem.mapAPs (fun (n, i) -> n + "_" + string(i))
+                |> TransitionSystem.mapAPs (fun (n, i) -> 
+                    n + "_" + string(i))
+
+        
+            let temp = TransitionSystem.print (fun a -> a) ts
+            printfn$"\n(TransitionSystem: %s{temp})" 
+
+
+
+            config.LoggerN $"Compiled Program to explicit-state TS (%i{sw.ElapsedMilliseconds}ms)"
+
+            // PRINT ts
 
             List.init (hyperltl.QuantifierPrefix.Length) (fun _ -> ts)
         else 
