@@ -48,8 +48,10 @@ let private findNextStatesFromTransitionSystem (ts : TransitionSystem<String>)  
 
         if Set.exists (fun i -> i = s) current then 
             let (sucs:Set<int>) = ts.Edges.[s]
-            for x in sucs do 
-                NextStates <- NextStates.Add x                
+            let (apEval:Set<int>) = ts.ApEval.[s]
+
+            //for x in sucs do 
+            NextStates <- NextStates.Add (sucs, apEval)                
         else ()  
     //printfn "Sys: %s" (string_of_set_elements NextStates )
     NextStates
@@ -60,32 +62,35 @@ let private findNextStatesFromNBA (nba : NBA<int, (String * int)>) (current: Set
     let mutable NextStates = Set.empty 
     for s in nba.States do
         if Set.exists (fun i -> i = s) current then 
-            let sucs = nba.Edges.[s]
-            for (g, n') in sucs do 
-                NextStates <- NextStates.Add n'
+            let (sucs: (DNF<int> * int) list) = nba.Edges.[s]
+            // for (g, n') in sucs do 
+            NextStates <- NextStates.Add sucs
               //  s.WriteLine("[" + DNF.print g + "] " + stateStringer(n')) 
         else ()  
     //printfn "NBA: %s" (string_of_set_elements NextStates )
     NextStates
 
 
-let private existRecord (memorization:Dictionary<int, (Set<int> * Set<int>)>) (systemStates: Set<int>) (nbaStates: Set<int>) =
-
-    let length = memorization.Count - 1
+let private existRecord 
+    (memorization:Dictionary<int, (Set<int> * Set<int> * Set<int> * DNF<int>)>) 
+    ((systemStates, nbaStates): (Set<int> *  Set<int>)) =
+    true 
+    (*let length = memorization.Count - 1
 
     let mutable Return = false 
 
     for i in 0 .. length do 
 
-        let (csys, cnba) = memorization[i]
+        let ((csys,  _), cnba) = memorization[i]
         //printfn "csys %s" (string_of_set_elements systemStates)
         //printfn "cnba %s" (string_of_set_elements nbaStates)
-
-        if Set.isSubset systemStates csys && Set.isSubset nbaStates cnba then 
+        let cnbaState = cnba |> List.map (fun (a, b) -> b) |> Set.ofList
+        if Set.isSubset systemStates csys && Set.isSubset nbaStates cnbaState then 
             Return <- true 
         else ()
 
     Return
+    *)
 
 
 let rec private brutal_force_approach 
@@ -106,7 +111,10 @@ let rec private brutal_force_approach
             brutal_force_approach (quantifiers.Tail) mappings config ts nba m 
         | FORALL -> 
             printfn$"\n(Current quantifier: forall)" 
-            let memorization = new Dictionary<int, (Set<int> * Set<int>)>() 
+
+            // 
+            let memorization = new Dictionary<int, (Set<int> * Set<int> * Set<int> * DNF<int>)>() 
+
             let printing = TransitionSystem.print (fun a -> a) ts
             printfn$"\n(system_After_bisim: %s{printing})" 
 
@@ -138,24 +146,23 @@ let rec private brutal_force_approach
                 let a = "l" + string i
                 printfn$"\n(mapping: %s{xl}-%d{xs} ~~> %s{a})")
 
-            memorization.Add (0, (ts.InitialStates, nba.InitialStates)) 
+            //memorization.Add (0, (ts.InitialStates, nba.InitialStates)) 
 
 
             let mutable Index = 0 
             let mutable Break = false
 
             while not Break do
-                let (systemStates, nbaStates) = memorization[Index]
+                let ((systemStates, _, nbaStates, _)) = memorization[Index]
 
+                let (nextSystemStates:Set<(Set<int> * Set<int>)>) = findNextStatesFromTransitionSystem ts systemStates                
 
-                let (nextSystemStates:Set<int>) = findNextStatesFromTransitionSystem ts systemStates                
+                let (nextNbaStates:Set<(DNF<int> * int) list>) = findNextStatesFromNBA nba nbaStates
 
-                let (nextNbaStates:Set<int>) = findNextStatesFromNBA nba nbaStates
-
-                if existRecord memorization nextSystemStates nextNbaStates then Break <- true
+                if existRecord memorization (Set.empty, (*nextSystemStates*) Set.empty) (*nextNbaStates*) then Break <- true
                 else 
                     Index <- Index + 1
-                    memorization.Add (Index, (nextSystemStates, nextNbaStates)) 
+                    //memorization.Add (Index, (nextSystemStates, nextNbaStates)) 
 
                 // let temp = string_of_set_elements systemStates 
 
