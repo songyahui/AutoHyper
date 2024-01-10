@@ -97,16 +97,34 @@ let rec private findIndexofAEleFromAList (list:string list) (name:string) =
     | [] -> raise <| AnalysisException $"Could not find the corresponding index from the system for %s{name}"
     | hd :: tail -> if hd = name then 0 else 1+ findIndexofAEleFromAList tail name
 
-let rec private findCurrentTrace (mappings:list<(String * int * int)>)  (index:int) =
+let rec private findCurrentTrace (mappings:list<(String * int * int * int)>)  (index:int) =
     match mappings with 
     | [] -> []
-    | (xl, xs, apIndex) :: tail -> 
-        if index = xs then (xl, apIndex) :: findCurrentTrace tail index
+    | (xl, xs, ap_nba_index, ap_sys_Index) :: tail -> 
+        if index = xs then (xl, ap_nba_index, ap_sys_Index) :: findCurrentTrace tail index
         else findCurrentTrace tail index
+
+let rec findValueFromAListByPosition (conjunctions:list<Literal<int>>) (position:int) = 
+    match conjunctions with 
+    | [] -> raise <| AnalysisException $"error dnfWithConstrains"
+    | hd :: tail -> 
+        if position = 0 then hd 
+        else findValueFromAListByPosition tail (position-1)
+
+let private dnfWithConstrains (dnf:DNF<int>) (position:int) (sys_value:bool) = 
+    dnf
+    |> List.filter (fun conjunctions -> 
+        let (value_at_position:Literal<int>) = findValueFromAListByPosition conjunctions position 
+        match value_at_position with 
+        | PL n ->  if sys_value = true then true else false 
+        | NL n ->  if sys_value = false  then true else false 
+        )
+   
+
 
 let rec private brutal_force_approach 
     (quantifiers:list<TraceQuantifierType>) 
-    (mappings:list<(String * int * int)>) 
+    (mappings:list<(String * int * int * int)>) 
     (config : Configuration) 
     (ts : TransitionSystem<String>) 
     (nba : NBA<int, (String * int)>) (round:int) (m : Mode) = 
@@ -155,9 +173,9 @@ let rec private brutal_force_approach
             // let (mappings : list<String*int*int> )  
             // var_name, ap_label_nba, ap_label_system
             mappings 
-            |> List.mapi (fun i (xl, xs, apIndex) -> 
-                let a = "l" + string i
-                printfn$"\n(mapping= var: %s{xl}-ap_nba:%d{xs} ~~> %s{a} ~~~ ap_system:%d{apIndex})"
+            |> List.map (fun (xl, xs, ap_nba_index, ap_sys_Index) -> 
+                let a = "l" + string ap_nba_index
+                printfn$"\n(mapping= var: %s{xl}-ap_nba:%d{xs} ~~> %s{a} ~~~ ap_system:%d{ap_sys_Index})"
                 )
 
 
@@ -179,14 +197,22 @@ let rec private brutal_force_approach
                             printfn "apEval:%s" (string_of_set_elements apEval)
                             printfn "state :%d" (state)
                             printfn "dnf   :%s" (DNF.print dnf)
-                            let var_name_ap_system = findCurrentTrace mappings round
-
-                            var_name_ap_system 
-                            |> List.map (fun (var_name, ap_system) -> 
+                            let var_name_ap_system_pos = findCurrentTrace mappings (round)
+                            printfn "=====================" 
+                            var_name_ap_system_pos 
+                            |> List.map (fun (var_name, ap_nba_pos, ap_system_pos) -> 
                                 printfn "var_name :%s" (var_name)
-                                printfn "ap_system:%d" (ap_system)
-                            )
+                                printfn "ap_nba_pos:%d" (ap_nba_pos)
+                                printfn "ap_system_pos:%d" (ap_system_pos)
+                                let sys_value = Set.exists (fun i -> i = ap_system_pos) apEval 
+                                printfn "sys_value:%b" (sys_value)
+                                let nab_value = dnfWithConstrains dnf ap_nba_pos sys_value
+                                printfn "dnf aligned with sys :%s" (DNF.print nab_value)
 
+                                
+
+
+                                )
                             )
                         )
                     )
@@ -237,17 +263,17 @@ let private verify_prime (config : Configuration) (tslist : list<TransitionSyste
     let quantifiers = hyperltl.QuantifierPrefix 
     let (ltl :  LTL<'L * int>) = hyperltl.LTLMatrix
 
-    // var_name, ap_label_nba, ap_label_system
-    let (mappings : list<String*int*int> ) = 
+    // var_name, ap_label_nba, ap_nba_index, ap_label_system
+    let (mappings : list<String*int*int*int> ) = 
         ltl 
         |> LTL.allAtoms
         |> Set.toList
         |> List.mapi (fun i (xl, xs) -> 
                 let a = "l" + string i
                 //printfn$"\n(mapping: %s{xl}-%d{xs} ~~> %s{a})"
-                let apIndex = findIndexofAEleFromAList (system.APs) xl
+                let ap_sys_Index = findIndexofAEleFromAList (system.APs) xl
                 //printfn "sys ap index %d" apIndex
-                (xl, xs, apIndex)
+                (xl, xs, i, ap_sys_Index)
                 )
 
     // get the property's NBA
