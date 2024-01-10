@@ -104,23 +104,42 @@ let rec private findCurrentTrace (mappings:list<(String * int * int * int)>)  (i
         if index = xs then (xl, ap_nba_index, ap_sys_Index) :: findCurrentTrace tail index
         else findCurrentTrace tail index
 
-let rec findValueFromAListByPosition (conjunctions:list<Literal<int>>) (position:int) = 
+let rec findValueFromAListByPosition (conjunctions:list<Literal<int>>) (position:int)  = 
     match conjunctions with 
     | [] -> raise <| AnalysisException $"error dnfWithConstrains"
     | hd :: tail -> 
         if position = 0 then hd 
         else findValueFromAListByPosition tail (position-1)
 
-let private dnfWithConstrains (dnf:DNF<int>) (position:int) (sys_value:bool) = 
+let findValueFromAListByPositions (conjunctions:list<Literal<int>>) (positions:int list)  = 
+    List.map 
+        (fun hd -> 
+            findValueFromAListByPosition conjunctions hd
+    ) positions
+
+
+
+let private dnfWithConstrains (dnf:DNF<int>) (sys_positions_valuations:list<int * bool>) = 
+    let rec checkIfAllPairAreTheSame (li1:list<bool>) (li2:list<Literal<int>>) : bool = 
+        match (li1, li2) with 
+        | ([], []) -> true 
+        | ((hd1::tail1), (hd2::tail2)) ->
+            (match (hd1, hd2) with 
+            | (true, PL _ ) -> checkIfAllPairAreTheSame tail1 tail2
+            | (false, NL _ ) -> checkIfAllPairAreTheSame tail1 tail2
+            | (_, _) -> false 
+            )
+        | _ -> false 
+
+
     dnf
     |> List.filter (fun conjunctions -> 
-        let (value_at_position:Literal<int>) = findValueFromAListByPosition conjunctions position 
-        match value_at_position with 
-        | PL n ->  if sys_value = true then true else false 
-        | NL n ->  if sys_value = false  then true else false 
+        let (positions:list<int>) = List.map (fun (a, b) -> a ) sys_positions_valuations
+        let (valuations:list<bool>) = List.map (fun (a, b) -> b ) sys_positions_valuations
+        let (value_at_position:list<Literal<int>>) = findValueFromAListByPositions conjunctions positions 
+        checkIfAllPairAreTheSame valuations value_at_position
         )
    
-
 
 let rec private brutal_force_approach 
     (quantifiers:list<TraceQuantifierType>) 
@@ -179,16 +198,16 @@ let rec private brutal_force_approach
                 )
 
 
-            // <system states, system transition label, nba states, nba transition DNF>
 
             let (secondSystemStates:Set<(Set<int> * Set<int>)>) = findNextStatesFromTransitionSystem ts (ts.InitialStates)                
             let (secondNbaStates:Set<(DNF<int> * int) list>) = findNextStatesFromNBA nba (nba.InitialStates)
 
-            let product = 
+            let (product:list<(Set<int> * Set<int> * int * DNF<int>)>) = 
                 secondSystemStates 
                 |> Set.toList
                 |> List.map (fun (sucs, apEval) -> 
-                    secondNbaStates
+                    //let (listOfSecondNbaStates:list<DNF<int>*int>) = 
+                    secondNbaStates 
                     |> Set.toList 
                     |> List.map (fun li -> 
                         li 
@@ -199,25 +218,36 @@ let rec private brutal_force_approach
                             printfn "dnf   :%s" (DNF.print dnf)
                             let var_name_ap_system_pos = findCurrentTrace mappings (round)
                             printfn "=====================" 
-                            var_name_ap_system_pos 
-                            |> List.map (fun (var_name, ap_nba_pos, ap_system_pos) -> 
-                                printfn "var_name :%s" (var_name)
-                                printfn "ap_nba_pos:%d" (ap_nba_pos)
-                                printfn "ap_system_pos:%d" (ap_system_pos)
-                                let sys_value = Set.exists (fun i -> i = ap_system_pos) apEval 
-                                printfn "sys_value:%b" (sys_value)
-                                let nab_value = dnfWithConstrains dnf ap_nba_pos sys_value
-                                printfn "dnf aligned with sys :%s" (DNF.print nab_value)
+                            let (sys_positions:list<int>) = 
+                                var_name_ap_system_pos 
+                                |> List.map (fun (var_name, ap_nba_pos, ap_system_pos) -> 
+                                    printfn "var_name :%s" (var_name)
+                                    printfn "ap_nba_pos:%d" (ap_nba_pos)
+                                    printfn "ap_system_pos:%d" (ap_system_pos)
+                                    //let sys_value = Set.exists (fun i -> i = ap_system_pos) apEval 
+                                    //printfn "sys_value:%b" (sys_value)
+                                    //let nab_after_aline_with_system = dnfWithConstrains dnf ap_nba_pos sys_value
+                                    //printfn "dnf aligned with sys :%s" (DNF.print nab_after_aline_with_system)
+                                    ap_system_pos)
+                            let (sys_positions_valuations:list<int * bool>) = 
+                                sys_positions
+                                |> List.map (fun sys_pos -> (sys_pos, Set.exists (fun i -> i = sys_pos) apEval)) 
+                            let (dnf_after_aline_with_system:DNF<int>) = 
+                                dnfWithConstrains dnf sys_positions_valuations
 
-                                
-
-
-                                )
+                            (dnf_after_aline_with_system, state)
+                             
                             )
                         )
+                    |> List.concat
+                    |> List.map (fun (dnf, state) -> (sucs, apEval, state, dnf))
                     )
+                |> List.concat
 
-            //memorization.Add (0, (ts.InitialStates, nba.InitialStates)) 
+                
+            printfn "Length Product %d" (List.length product)
+            // <system states, system transition label, nba states, nba transition DNF>
+            // memorization.Add (0, (ts.InitialStates, nba.InitialStates)) 
 
 
             let mutable Index = 0 
