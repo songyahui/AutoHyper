@@ -92,13 +92,24 @@ let private existRecord
     Return
     *)
 
+let rec private findIndexofAEleFromAList (list:string list) (name:string) =
+    match list with 
+    | [] -> raise <| AnalysisException $"Could not find the corresponding index from the system for %s{name}"
+    | hd :: tail -> if hd = name then 0 else 1+ findIndexofAEleFromAList tail name
+
+let rec private findCurrentTrace (mappings:list<(String * int * int)>)  (index:int) =
+    match mappings with 
+    | [] -> []
+    | (xl, xs, apIndex) :: tail -> 
+        if index = xs then (xl, apIndex) :: findCurrentTrace tail index
+        else findCurrentTrace tail index
 
 let rec private brutal_force_approach 
     (quantifiers:list<TraceQuantifierType>) 
-    (mappings:list<(String * int)>) 
+    (mappings:list<(String * int * int)>) 
     (config : Configuration) 
     (ts : TransitionSystem<String>) 
-    (nba : NBA<int, (String * int)>) (m : Mode) = 
+    (nba : NBA<int, (String * int)>) (round:int) (m : Mode) = 
     
 
 
@@ -108,11 +119,11 @@ let rec private brutal_force_approach
         | EXISTS -> 
             printfn$"\n(Current quantifier: exists)"  
             (* TBD *)
-            brutal_force_approach (quantifiers.Tail) mappings config ts nba m 
+            brutal_force_approach (quantifiers.Tail) mappings config ts nba (round+1) m 
         | FORALL -> 
             printfn$"\n(Current quantifier: forall)" 
 
-            // 
+            // <system states, system transition label, nba states, nba transition DNF>
             let memorization = new Dictionary<int, (Set<int> * Set<int> * Set<int> * DNF<int>)>() 
 
             let printing = TransitionSystem.print (fun a -> a) ts
@@ -140,11 +151,45 @@ let rec private brutal_force_approach
             printfn$"\n(nba_printing: %s{s.ToString()})" 
 
 
-            // mapping from var_trace -> labels, e.g., (mapping: h_0-0 ~~> l0)
+            // mapping from var_trace -> labels, e.g., (mapping: l_0-1 ~~> l2 ~~> 2)
+            // let (mappings : list<String*int*int> )  
+            // var_name, ap_label_nba, ap_label_system
             mappings 
-            |> List.mapi (fun i (xl, xs) -> 
+            |> List.mapi (fun i (xl, xs, apIndex) -> 
                 let a = "l" + string i
-                printfn$"\n(mapping: %s{xl}-%d{xs} ~~> %s{a})")
+                printfn$"\n(mapping= var: %s{xl}-ap_nba:%d{xs} ~~> %s{a} ~~~ ap_system:%d{apIndex})"
+                )
+
+
+            // <system states, system transition label, nba states, nba transition DNF>
+
+            let (secondSystemStates:Set<(Set<int> * Set<int>)>) = findNextStatesFromTransitionSystem ts (ts.InitialStates)                
+            let (secondNbaStates:Set<(DNF<int> * int) list>) = findNextStatesFromNBA nba (nba.InitialStates)
+
+            let product = 
+                secondSystemStates 
+                |> Set.toList
+                |> List.map (fun (sucs, apEval) -> 
+                    secondNbaStates
+                    |> Set.toList 
+                    |> List.map (fun li -> 
+                        li 
+                        |> List.map (fun (dnf, state) -> 
+                            printfn "sucs:  %s" (string_of_set_elements sucs)
+                            printfn "apEval:%s" (string_of_set_elements apEval)
+                            printfn "state :%d" (state)
+                            printfn "dnf   :%s" (DNF.print dnf)
+                            let var_name_ap_system = findCurrentTrace mappings round
+
+                            var_name_ap_system 
+                            |> List.map (fun (var_name, ap_system) -> 
+                                printfn "var_name :%s" (var_name)
+                                printfn "ap_system:%d" (ap_system)
+                            )
+
+                            )
+                        )
+                    )
 
             //memorization.Add (0, (ts.InitialStates, nba.InitialStates)) 
 
@@ -170,7 +215,7 @@ let rec private brutal_force_approach
             for pair in memorization do
                 printfn "%A" pair
 
-            brutal_force_approach (quantifiers.Tail) mappings config ts nba m 
+            brutal_force_approach (quantifiers.Tail) mappings config ts nba (round+1) m 
 
 
 
@@ -192,10 +237,18 @@ let private verify_prime (config : Configuration) (tslist : list<TransitionSyste
     let quantifiers = hyperltl.QuantifierPrefix 
     let (ltl :  LTL<'L * int>) = hyperltl.LTLMatrix
 
-    let (mappings : list<String*int> ) = 
+    // var_name, ap_label_nba, ap_label_system
+    let (mappings : list<String*int*int> ) = 
         ltl 
         |> LTL.allAtoms
         |> Set.toList
+        |> List.mapi (fun i (xl, xs) -> 
+                let a = "l" + string i
+                //printfn$"\n(mapping: %s{xl}-%d{xs} ~~> %s{a})"
+                let apIndex = findIndexofAEleFromAList (system.APs) xl
+                //printfn "sys ap index %d" apIndex
+                (xl, xs, apIndex)
+                )
 
     // get the property's NBA
     let (nba  : NBA<int, (String * int)>) = 
@@ -205,7 +258,11 @@ let private verify_prime (config : Configuration) (tslist : list<TransitionSyste
             config.LoggerN err.DebugInfo
             raise <| AnalysisException err.Info
 
-    let res = brutal_force_approach quantifiers mappings config system nba m 
+
+        
+
+    // starts with the first path variable 
+    let res = brutal_force_approach quantifiers mappings config system nba 0 m 
 
 
     if res then 

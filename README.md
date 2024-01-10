@@ -6,12 +6,23 @@ cd ../..
 
 app/AutoHyper --debug --bp ./benchmarks/bp/concur_p1_1bit.txt ./benchmarks/bp/gni.txt
 
-app/AutoHyper --debug --bp ./benchmarks/planning/robotic_sp_3600.smv ./benchmarks/planning/robotic_sp_formula.hq
+app/AutoHyper --debug --nusmv ./benchmarks/planning/robotic_sp_3600.smv ./benchmarks/planning/robotic_sp_formula.hq
 
 https://users.abo.fi/jboling/cdes/op_on_aut.pdf
 
 Transition system state{evacuation}, the evacuation will become label when becoming NBA 
 NBA state{evacuation}, the evacuation does not have any meanings. 
+
+
+
+--BODY--
+State: 0 {0}
+[0 | !1] 0
+State: 1
+[0] 0
+[!0&!1] 1
+--END--
+
 
 
 TODO:
