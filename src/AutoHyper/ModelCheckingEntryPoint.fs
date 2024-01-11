@@ -117,8 +117,6 @@ let findValueFromAListByPositions (conjunctions:list<Literal<int>>) (positions:i
             findValueFromAListByPosition conjunctions hd
     ) positions
 
-
-
 let private dnfWithConstrains (dnf:DNF<int>) (sys_positions_valuations:list<int * bool>) = 
     let rec checkIfAllPairAreTheSame (li1:list<bool>) (li2:list<Literal<int>>) : bool = 
         match (li1, li2) with 
@@ -139,7 +137,53 @@ let private dnfWithConstrains (dnf:DNF<int>) (sys_positions_valuations:list<int 
         let (value_at_position:list<Literal<int>>) = findValueFromAListByPositions conjunctions positions 
         checkIfAllPairAreTheSame valuations value_at_position
         )
-   
+ 
+
+let private generateNextStep (sysStates:Set<int>) (nbaStates:Set<int>) ts nba (mappings:list<(String * int * int * int)>) (round:int) = 
+    let (secondSystemStates:Set<(Set<int> * Set<int>)>) = findNextStatesFromTransitionSystem ts sysStates
+    let (secondNbaStates:Set<(DNF<int> * int) list>) = findNextStatesFromNBA nba nbaStates 
+
+    let (product:list<(Set<int> * Set<int> * int * DNF<int>)>) = 
+        secondSystemStates 
+        |> Set.toList
+        |> List.map (fun (sucs, apEval) -> 
+            //let (listOfSecondNbaStates:list<DNF<int>*int>) = 
+            secondNbaStates 
+            |> Set.toList 
+            |> List.map (fun li -> 
+                li 
+                |> List.map (fun (dnf, state) -> 
+                    printfn "sucs:  %s" (string_of_set_elements sucs)
+                    printfn "apEval:%s" (string_of_set_elements apEval)
+                    printfn "state :%d" (state)
+                    printfn "dnf   :%s" (DNF.print dnf)
+                    let var_name_ap_system_pos = findCurrentTrace mappings (round)
+                    printfn "=====================" 
+                    let (sys_positions:list<int>) = 
+                        var_name_ap_system_pos 
+                        |> List.map (fun (var_name, ap_nba_pos, ap_system_pos) -> 
+                            printfn "var_name :%s" (var_name)
+                            printfn "ap_nba_pos:%d" (ap_nba_pos)
+                            printfn "ap_system_pos:%d" (ap_system_pos)
+                            ap_system_pos)
+                    let (sys_positions_valuations:list<int * bool>) = 
+                        sys_positions
+                        |> List.map (fun sys_pos -> (sys_pos, Set.exists (fun i -> i = sys_pos) apEval)) 
+                    let (dnf_after_aline_with_system:DNF<int>) = 
+                        dnfWithConstrains dnf sys_positions_valuations
+
+                    (dnf_after_aline_with_system, state)
+                             
+                    )
+                )
+            |> List.concat
+            |> List.map (fun (dnf, state) -> (sucs, apEval, state, dnf))
+            )
+        |> List.concat
+
+    product 
+
+  
 
 let rec private brutal_force_approach 
     (quantifiers:list<TraceQuantifierType>) 
@@ -198,54 +242,11 @@ let rec private brutal_force_approach
                 )
 
 
-
-            let (secondSystemStates:Set<(Set<int> * Set<int>)>) = findNextStatesFromTransitionSystem ts (ts.InitialStates)                
-            let (secondNbaStates:Set<(DNF<int> * int) list>) = findNextStatesFromNBA nba (nba.InitialStates)
-
-            let (product:list<(Set<int> * Set<int> * int * DNF<int>)>) = 
-                secondSystemStates 
-                |> Set.toList
-                |> List.map (fun (sucs, apEval) -> 
-                    //let (listOfSecondNbaStates:list<DNF<int>*int>) = 
-                    secondNbaStates 
-                    |> Set.toList 
-                    |> List.map (fun li -> 
-                        li 
-                        |> List.map (fun (dnf, state) -> 
-                            printfn "sucs:  %s" (string_of_set_elements sucs)
-                            printfn "apEval:%s" (string_of_set_elements apEval)
-                            printfn "state :%d" (state)
-                            printfn "dnf   :%s" (DNF.print dnf)
-                            let var_name_ap_system_pos = findCurrentTrace mappings (round)
-                            printfn "=====================" 
-                            let (sys_positions:list<int>) = 
-                                var_name_ap_system_pos 
-                                |> List.map (fun (var_name, ap_nba_pos, ap_system_pos) -> 
-                                    printfn "var_name :%s" (var_name)
-                                    printfn "ap_nba_pos:%d" (ap_nba_pos)
-                                    printfn "ap_system_pos:%d" (ap_system_pos)
-                                    //let sys_value = Set.exists (fun i -> i = ap_system_pos) apEval 
-                                    //printfn "sys_value:%b" (sys_value)
-                                    //let nab_after_aline_with_system = dnfWithConstrains dnf ap_nba_pos sys_value
-                                    //printfn "dnf aligned with sys :%s" (DNF.print nab_after_aline_with_system)
-                                    ap_system_pos)
-                            let (sys_positions_valuations:list<int * bool>) = 
-                                sys_positions
-                                |> List.map (fun sys_pos -> (sys_pos, Set.exists (fun i -> i = sys_pos) apEval)) 
-                            let (dnf_after_aline_with_system:DNF<int>) = 
-                                dnfWithConstrains dnf sys_positions_valuations
-
-                            (dnf_after_aline_with_system, state)
-                             
-                            )
-                        )
-                    |> List.concat
-                    |> List.map (fun (dnf, state) -> (sucs, apEval, state, dnf))
-                    )
-                |> List.concat
-
-                
+            let (product:list<(Set<int> * Set<int> * int * DNF<int>)>)  = generateNextStep (ts.InitialStates) (nba.InitialStates) ts nba mappings round
+   
             printfn "Length Product %d" (List.length product)
+
+
             // <system states, system transition label, nba states, nba transition DNF>
             // memorization.Add (0, (ts.InitialStates, nba.InitialStates)) 
 
