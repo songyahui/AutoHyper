@@ -72,25 +72,23 @@ let private findNextStatesFromNBA (nba : NBA<int, (String * int)>) (current: Set
 
 
 let private existRecord 
-    (memorization:Dictionary<int, (Set<int> * Set<int> * Set<int> * DNF<int>)>) 
-    ((systemStates, nbaStates): (Set<int> *  Set<int>)) =
-    true 
-    (*let length = memorization.Count - 1
-
+    (memorization:Dictionary<int, (Set<int> * Set<int> * int * DNF<int>)>) 
+    (currentProduct: (Set<int> * Set<int> * int * DNF<int>)) =
+    let (systemStates, _, nbaState, _) = currentProduct
+    let length = memorization.Count - 1
     let mutable Return = false 
 
     for i in 0 .. length do 
 
-        let ((csys,  _), cnba) = memorization[i]
+        let (csys, _, cnba, _) = memorization[i]
         //printfn "csys %s" (string_of_set_elements systemStates)
         //printfn "cnba %s" (string_of_set_elements nbaStates)
-        let cnbaState = cnba |> List.map (fun (a, b) -> b) |> Set.ofList
-        if Set.isSubset systemStates csys && Set.isSubset nbaStates cnbaState then 
+        if Set.isSubset systemStates csys && nbaState = cnba then 
             Return <- true 
         else ()
 
     Return
-    *)
+
 
 let rec private findIndexofAEleFromAList (list:string list) (name:string) =
     match list with 
@@ -181,7 +179,11 @@ let private generateNextStep (sysStates:Set<int>) (nbaStates:Set<int>) ts nba (m
             )
         |> List.concat
 
-    product 
+    
+    printfn "Length Product %d" (List.length product)
+    product.Head 
+    
+
 
   
 
@@ -204,8 +206,8 @@ let rec private brutal_force_approach
         | FORALL -> 
             printfn$"\n(Current quantifier: forall)" 
 
-            // <system states, system transition label, nba states, nba transition DNF>
-            let memorization = new Dictionary<int, (Set<int> * Set<int> * Set<int> * DNF<int>)>() 
+            // <system states, system transition label, nba state, nba transition DNF>
+            let memorization = new Dictionary<int, (Set<int> * Set<int> * int * DNF<int>)>() 
 
             let printing = TransitionSystem.print (fun a -> a) ts
             printfn$"\n(system_After_bisim: %s{printing})" 
@@ -242,13 +244,12 @@ let rec private brutal_force_approach
                 )
 
 
-            let (product:list<(Set<int> * Set<int> * int * DNF<int>)>)  = generateNextStep (ts.InitialStates) (nba.InitialStates) ts nba mappings round
+            let (product: (Set<int> * Set<int> * int * DNF<int>) )  = generateNextStep (ts.InitialStates) (nba.InitialStates) ts nba mappings round
    
-            printfn "Length Product %d" (List.length product)
 
 
             // <system states, system transition label, nba states, nba transition DNF>
-            // memorization.Add (0, (ts.InitialStates, nba.InitialStates)) 
+            memorization.Add (0, product ) 
 
 
             let mutable Index = 0 
@@ -257,16 +258,14 @@ let rec private brutal_force_approach
             while not Break do
                 let ((systemStates, _, nbaStates, _)) = memorization[Index]
 
-                let (nextSystemStates:Set<(Set<int> * Set<int>)>) = findNextStatesFromTransitionSystem ts systemStates                
+                let (nextProduct: (Set<int> * Set<int> * int * DNF<int>) )  = generateNextStep (systemStates) (Set.empty.Add(nbaStates)) ts nba mappings round
 
-                let (nextNbaStates:Set<(DNF<int> * int) list>) = findNextStatesFromNBA nba nbaStates
 
-                if existRecord memorization (Set.empty, (*nextSystemStates*) Set.empty) (*nextNbaStates*) then Break <- true
+                if existRecord memorization nextProduct then Break <- true
                 else 
                     Index <- Index + 1
-                    //memorization.Add (Index, (nextSystemStates, nextNbaStates)) 
+                    memorization.Add (Index, nextProduct) 
 
-                // let temp = string_of_set_elements systemStates 
 
             let c = memorization.Count
             for pair in memorization do
