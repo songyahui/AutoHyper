@@ -240,7 +240,7 @@ let rec findAllTheCycles
     (mappings:list<(String * int * int * int)>) (config : Configuration) 
     (ts : TransitionSystem<String>)  (nba : NBA<int, (String * int)>) 
     (sysStates:Set<int>)  (nbaStates:Set<int>) 
-    (history: Record) (traceIndex:int) : list <Record> = 
+    (history: Record) (traceIndex:int) : list <Record * (int * int)> = 
 
     //printfn "findAllTheCycles: sys: %s, nba:%s" (string_of_set_elements sysStates) (string_of_set_elements nbaStates)
 
@@ -280,7 +280,7 @@ let rec findAllTheCycles
         |> List.concat
 
 
-    let rec iterateNBATrans (sysTran:(int * int * Set<int>)) (nbaTrans:list<(int * int * DNF<int>)>) : list<Record> = 
+    let rec iterateNBATrans (sysTran:(int * int * Set<int>)) (nbaTrans:list<(int * int * DNF<int>)>) : list<Record * (int * int)> = 
         let (sys_current, sys_next, sys_label) = sysTran
         match nbaTrans with 
         | [] -> [] 
@@ -302,11 +302,11 @@ let rec findAllTheCycles
           let (history':Record) = history @ [(sys_current, nba_current, dnf_after_aline_with_system)]
 
           if recordReoccur history (sys_next, nba_next) then 
-            printfn "----- sys_next: %d, nba_next:%d ----- " sys_next nba_next
-            [history'] 
+            //printfn "----- sys_next: %d, nba_next:%d ----- " sys_next nba_next
+            [(history', (sys_next, nba_next))] 
           else findAllTheCycles mappings config ts nba (Set.ofList [sys_next]) (Set.ofList [nba_next]) history' traceIndex
 
-    let rec iterateSysTrans (sysTrans:list<(int * int * Set<int>)>) (nbaTrans:list<(int * int * DNF<int>)>) : list<Record> = 
+    let rec iterateSysTrans (sysTrans:list<(int * int * Set<int>)>) (nbaTrans:list<(int * int * DNF<int>)>) : list<Record * (int * int)> = 
         match sysTrans with 
         | [] -> []
         | hd::tail -> iterateNBATrans hd nbaTrans @ iterateSysTrans tail nbaTrans
@@ -321,10 +321,16 @@ let rec string_of_record (record:Record) =
     |> List.map (fun (a, b, dnf) ->  string a  ^ ","^ string b ^ ","^ DNF.print dnf)
     |> Util.combineStringsWithSeperator ";\n"
 
-let rec string_of_records (records:list<Record>) = 
+let rec string_of_records (records:list<Record * (int * int)>) = 
     records
-    |> List.map (fun a -> 
-        string_of_record a)
+    |> List.map (fun (a, (end_sys, end_nba))-> 
+        string_of_record a ^ 
+        "\nreoccurrence with " ^ 
+        string end_sys ^ ", " ^ 
+        string end_nba
+        
+
+        )
     |> Util.combineStringsWithSeperator "\n==================\n\n"
 
 
@@ -346,7 +352,7 @@ let rec private on_the_Fly_HyperLTL_MC
         printfn "==========================" 
 
         let traces = findAllTheCycles mappings config ts nba (ts.InitialStates) (nba.InitialStates) [] traceIndex
-        printfn "Traces :\n %s %d" (string_of_records traces) (List.length traces)
+        printfn "Traces :\n%s\n%d" (string_of_records traces) (List.length traces)
 
         let memorization = new Dictionary<int, (Set<int> * Set<int> * int * DNF<int>)>() 
         let (product: (Set<int> * Set<int> * int * DNF<int>) )  = generateNextStep (ts.InitialStates) (nba.InitialStates) ts nba mappings traceIndex
