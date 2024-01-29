@@ -41,24 +41,28 @@ let private string_of_set_elements (list: Set<int>)  =
         |> Set.toList
         |> Util.combineStringsWithSeperator " "
 
-let private findNextStatesFromTransitionSystem (ts : TransitionSystem<String>)  (current: Set<int>) = 
+let private findNextStatesFromTransitionSystem 
+    (ts : TransitionSystem<String>)  
+    (current: Set<int>) : 
+    Set <Set<int> * Set<int>> 
+    =  (* return: a set of transitions, each transition is a pair (successors, and AP) where both of them are Set<int> *)
     let mutable NextStates = Set.empty 
     for s in ts.States do
         //printfn "current * s: %s, %d" (string_of_set_elements current ) s
-
         if Set.exists (fun i -> i = s) current then 
             let (sucs:Set<int>) = ts.Edges.[s]
             let (apEval:Set<int>) = ts.ApEval.[s]
-
-            //for x in sucs do 
             NextStates <- NextStates.Add (sucs, apEval)                
         else ()  
-    //printfn "Sys: %s" (string_of_set_elements NextStates )
     NextStates
 
 
 
-let private findNextStatesFromNBA (nba : NBA<int, (String * int)>) (current: Set<int>) = 
+let private findNextStatesFromNBA 
+    (nba : NBA<int, (String * int)>) 
+    (current: Set<int>) : 
+    Set<(DNF<int> * int) list>
+    =  (* return: a set of transitions, each transition is a pair (dnf, and successor) where successor is a single state *)
     let mutable NextStates = Set.empty 
     for s in nba.States do
         if Set.exists (fun i -> i = s) current then 
@@ -67,7 +71,6 @@ let private findNextStatesFromNBA (nba : NBA<int, (String * int)>) (current: Set
             NextStates <- NextStates.Add sucs
               //  s.WriteLine("[" + DNF.print g + "] " + stateStringer(n')) 
         else ()  
-    //printfn "NBA: %s" (string_of_set_elements NextStates )
     NextStates
 
 
@@ -137,7 +140,13 @@ let private dnfWithConstrains (dnf:DNF<int>) (sys_positions_valuations:list<int 
         )
  
 
-let private generateNextStep (sysStates:Set<int>) (nbaStates:Set<int>) ts nba (mappings:list<(String * int * int * int)>) (round:int) = 
+let private generateNextStep 
+    (sysStates:Set<int>) 
+    (nbaStates:Set<int>) 
+    ts 
+    nba 
+    (mappings:list<(String * int * int * int)>) 
+    (traceIndex:int) = 
     let (secondSystemStates:Set<(Set<int> * Set<int>)>) = findNextStatesFromTransitionSystem ts sysStates
     let (secondNbaStates:Set<(DNF<int> * int) list>) = findNextStatesFromNBA nba nbaStates 
 
@@ -151,18 +160,18 @@ let private generateNextStep (sysStates:Set<int>) (nbaStates:Set<int>) ts nba (m
             |> List.map (fun li -> 
                 li 
                 |> List.map (fun (dnf, state) -> 
-                    printfn "sucs:  %s" (string_of_set_elements sucs)
-                    printfn "apEval:%s" (string_of_set_elements apEval)
-                    printfn "state :%d" (state)
-                    printfn "dnf   :%s" (DNF.print dnf)
-                    let var_name_ap_system_pos = findCurrentTrace mappings (round)
-                    printfn "=====================" 
+                    //printfn "sucs:  %s" (string_of_set_elements sucs)
+                    //printfn "apEval:%s" (string_of_set_elements apEval)
+                    //printfn "state :%d" (state)
+                    //printfn "dnf   :%s" (DNF.print dnf)
+                    let var_name_ap_system_pos = findCurrentTrace mappings (traceIndex)
+                    //printfn "=====================" 
                     let (sys_positions:list<int>) = 
                         var_name_ap_system_pos 
                         |> List.map (fun (var_name, ap_nba_pos, ap_system_pos) -> 
-                            printfn "var_name :%s" (var_name)
-                            printfn "ap_nba_pos:%d" (ap_nba_pos)
-                            printfn "ap_system_pos:%d" (ap_system_pos)
+                            //printfn "var_name :%s" (var_name)
+                            //printfn "ap_nba_pos:%d" (ap_nba_pos)
+                            //printfn "ap_system_pos:%d" (ap_system_pos)
                             ap_system_pos)
                     let (sys_positions_valuations:list<int * bool>) = 
                         sys_positions
@@ -180,103 +189,116 @@ let private generateNextStep (sysStates:Set<int>) (nbaStates:Set<int>) ts nba (m
         |> List.concat
 
     
-    printfn "Length Product %d" (List.length product)
+    //printfn "Length Product %d" (List.length product)
     product.Head 
-    
+    (* Here is wrong.... *)
 
+let string_of_transition_system (ts : TransitionSystem<String>)  =
+    let printing = TransitionSystem.print (fun a -> a) ts
+    printfn$"\n(system_After_bisim: %s{printing})" 
+        
 
-  
+let string_of_property_automata (nba : NBA<int, (String * int)>) = 
+    let stateStringer = (fun a-> string a) 
+    let alphStringer = (fun (a, i) -> a + "_" + string i)
+    let s = new StringWriter() 
+    s.WriteLine("HOA: v1")
+    s.WriteLine ("States: " + string(nba.States.Count))
+    for n in nba.InitialStates do 
+        s.WriteLine ("Start: " + stateStringer(n))
+    s.WriteLine ("AP: " + string(nba.APs.Length) + " " + List.fold (fun s x -> s + " \"" + alphStringer(x) + "\"") "" nba.APs)
+    for n in nba.States do 
+        let edges = nba.Edges.[n]
+        let accString = 
+            if nba.AcceptingStates.Contains n then 
+                "{0}"
+            else 
+                ""
+        s.WriteLine("State: " + stateStringer(n) + " " + accString)
+        for (g, n') in edges do 
+            s.WriteLine("[" + DNF.print g + "] " + stateStringer(n'))
+    // let nbaprinting = NBA.toHoaString (fun a-> string a) (fun (a, i) -> a + "_" + string i) nba
+    printfn$"\n(nba_printing: %s{s.ToString()})" 
 
-let rec private brutal_force_approach 
-    (quantifiers:list<TraceQuantifierType>) 
+type Record = list <(int * int * DNF<int>)>
+
+let rec findAllTheCycles 
     (mappings:list<(String * int * int * int)>) 
     (config : Configuration) 
     (ts : TransitionSystem<String>) 
-    (nba : NBA<int, (String * int)>) (round:int) (m : Mode) = 
+    (nba : NBA<int, (String * int)>) 
+    (sysStates:Set<int>) 
+    (nbaStates:Set<int>) 
+    (history: Record) : list <Record> = 
+
+
     
 
+    [history]
 
-    if quantifiers.Length = 2 then true 
-    else 
-        match quantifiers.Head with 
+
+
+let rec private on_the_Fly_HyperLTL_MC 
+    (quantifiers:list<TraceQuantifierType>)  (* current quantifiers list, and its head is the current quantifier *)
+    (mappings:list<(String * int * int * int)>) (* mapping from var_name -> trance index -> nba_ap_index -> system_ap_index *)
+    (config : Configuration) (* This is for printing *)
+    (ts : TransitionSystem<String>) (* transition system *)
+    (nba : NBA<int, (String * int)>) (* property automata *)
+    (traceIndex:int) (* current trace index, for matching the valuations from teh system and property automata *)
+    = 
+    if quantifiers.Length = 2 then true (* for now *)
+    else         
+        
+        string_of_transition_system ts 
+        string_of_property_automata nba
+
+        let traces = findAllTheCycles mappings config ts nba (ts.InitialStates) (nba.InitialStates) [] 
+
+        let memorization = new Dictionary<int, (Set<int> * Set<int> * int * DNF<int>)>() 
+        let (product: (Set<int> * Set<int> * int * DNF<int>) )  = generateNextStep (ts.InitialStates) (nba.InitialStates) ts nba mappings traceIndex
+
+        // <system states, system transition label, nba states, nba transition DNF>
+        memorization.Add (0, product ) 
+
+        let mutable Index = 0 
+        let mutable Break = false
+
+        while not Break do
+            let ((systemStates, _, nbaStates, _)) = memorization[Index]
+
+            let (nextProduct: (Set<int> * Set<int> * int * DNF<int>) )  = generateNextStep (systemStates) (Set.empty.Add(nbaStates)) ts nba mappings traceIndex
+
+
+            if existRecord memorization nextProduct then Break <- true
+            else 
+                Index <- Index + 1
+                memorization.Add (Index, nextProduct) 
+
+
+        (*
+        let c = memorization.Count
+        for pair in memorization do
+            printfn "%A" pair
+        *)
+
+        on_the_Fly_HyperLTL_MC (quantifiers.Tail) mappings config ts nba (traceIndex+1) 
+
+
+        (*match quantifiers.Head with 
         | EXISTS -> 
             printfn$"\n(Current quantifier: exists)"  
             (* TBD *)
-            brutal_force_approach (quantifiers.Tail) mappings config ts nba (round+1) m 
+            on_the_Fly_HyperLTL_MC (quantifiers.Tail) mappings config ts nba (traceIndex+1) 
         | FORALL -> 
             printfn$"\n(Current quantifier: forall)" 
-
             // <system states, system transition label, nba state, nba transition DNF>
-            let memorization = new Dictionary<int, (Set<int> * Set<int> * int * DNF<int>)>() 
-
-            let printing = TransitionSystem.print (fun a -> a) ts
-            printfn$"\n(system_After_bisim: %s{printing})" 
-
-            let stateStringer = (fun a-> string a) 
-            let alphStringer = (fun (a, i) -> a + "_" + string i)
-            let s = new StringWriter() 
-            s.WriteLine("HOA: v1")
-            s.WriteLine ("States: " + string(nba.States.Count))
-            for n in nba.InitialStates do 
-                s.WriteLine ("Start: " + stateStringer(n))
-            s.WriteLine ("AP: " + string(nba.APs.Length) + " " + List.fold (fun s x -> s + " \"" + alphStringer(x) + "\"") "" nba.APs)
-            for n in nba.States do 
-                let edges = nba.Edges.[n]
-                let accString = 
-                    if nba.AcceptingStates.Contains n then 
-                        "{0}"
-                    else 
-                        ""
-                s.WriteLine("State: " + stateStringer(n) + " " + accString)
-                for (g, n') in edges do 
-                    s.WriteLine("[" + DNF.print g + "] " + stateStringer(n'))
-            // let nbaprinting = NBA.toHoaString (fun a-> string a) (fun (a, i) -> a + "_" + string i) nba
-            printfn$"\n(nba_printing: %s{s.ToString()})" 
+        *)
 
 
-            // mapping from var_trace -> labels, e.g., (mapping: l_0-1 ~~> l2 ~~> 2)
-            // let (mappings : list<String*int*int> )  
-            // var_name, ap_label_nba, ap_label_system
-            mappings 
-            |> List.map (fun (xl, xs, ap_nba_index, ap_sys_Index) -> 
-                let a = "l" + string ap_nba_index
-                printfn$"\n(mapping= var: %s{xl}-ap_nba:%d{xs} ~~> %s{a} ~~~ ap_system:%d{ap_sys_Index})"
-                )
-
-
-            let (product: (Set<int> * Set<int> * int * DNF<int>) )  = generateNextStep (ts.InitialStates) (nba.InitialStates) ts nba mappings round
-   
-
-
-            // <system states, system transition label, nba states, nba transition DNF>
-            memorization.Add (0, product ) 
-
-
-            let mutable Index = 0 
-            let mutable Break = false
-
-            while not Break do
-                let ((systemStates, _, nbaStates, _)) = memorization[Index]
-
-                let (nextProduct: (Set<int> * Set<int> * int * DNF<int>) )  = generateNextStep (systemStates) (Set.empty.Add(nbaStates)) ts nba mappings round
-
-
-                if existRecord memorization nextProduct then Break <- true
-                else 
-                    Index <- Index + 1
-                    memorization.Add (Index, nextProduct) 
-
-
-            let c = memorization.Count
-            for pair in memorization do
-                printfn "%A" pair
-
-            brutal_force_approach (quantifiers.Tail) mappings config ts nba (round+1) m 
-
-
-
-
-let private verify_prime (config : Configuration) (tslist : list<TransitionSystem<String>>) (hyperltl : HyperLTL<String>) (m : Mode) = 
+let private verify_on_the_Fly 
+    (config : Configuration) 
+    (tslist : list<TransitionSystem<String>>) 
+    (hyperltl : HyperLTL<String>) = 
     printfn$"\n===========================================================" 
     printfn$"=================== Start of SYH's Code ===================" 
     printfn$"===========================================================\n" 
@@ -298,13 +320,19 @@ let private verify_prime (config : Configuration) (tslist : list<TransitionSyste
         ltl 
         |> LTL.allAtoms
         |> Set.toList
-        |> List.mapi (fun i (xl, xs) -> 
-                let a = "l" + string i
-                //printfn$"\n(mapping: %s{xl}-%d{xs} ~~> %s{a})"
+        |> List.mapi 
+            (fun i (xl, xs) -> 
                 let ap_sys_Index = findIndexofAEleFromAList (system.APs) xl
-                //printfn "sys ap index %d" apIndex
-                (xl, xs, i, ap_sys_Index)
-                )
+                (xl, xs, i, ap_sys_Index))
+
+    // mapping from var_trace -> labels, e.g., (mapping: l_0-1 ~~> l2 ~~> 2)
+    // let (mappings : list<String*int*int> )  
+    // var_name, ap_label_nba, ap_label_system
+    mappings 
+    |> List.map 
+        (fun (xl, xs, ap_nba_index, ap_sys_Index) -> 
+        let a = "l" + string ap_nba_index
+        printfn$"\n(mapping= var: %s{xl}-ap_nba:%d{xs} ~~> %s{a} ~~~ ap_system:%d{ap_sys_Index})")
 
     // get the property's NBA
     let (nba  : NBA<int, (String * int)>) = 
@@ -314,17 +342,13 @@ let private verify_prime (config : Configuration) (tslist : list<TransitionSyste
             config.LoggerN err.DebugInfo
             raise <| AnalysisException err.Info
 
-
-        
-
-    // starts with the first path variable 
-    let res = brutal_force_approach quantifiers mappings config system nba 0 m 
-
+    // starts with the first trace variable, indexed with 0
+    let res = on_the_Fly_HyperLTL_MC quantifiers mappings config system nba 0 
 
     if res then 
-        printfn "\nSAT (brutal_force_approach)\n"
+        printfn "\nSAT (on_the_Fly_HyperLTL_MC)\n"
     else
-        printfn "\nUNSAT (brutal_force_approach)\n"
+        printfn "\nUNSAT (on_the_Fly_HyperLTL_MC)\n"
 
     swtotal.Stop()
     config.LoggerN $"End of SYH code time: %i{swtotal.ElapsedMilliseconds}ms (~=%.2f{double(swtotal.ElapsedMilliseconds) / 1000.0}s)"
@@ -349,7 +373,7 @@ let private verify config (tslist : list<TransitionSystem<String>>) (hyperltl : 
     
     config.LoggerN $"Model-checking time: %i{t.TotalTime}ms (~=%.2f{double(t.TotalTime) / 1000.0}s)"
 
-    verify_prime config tslist hyperltl m 
+    verify_on_the_Fly config tslist hyperltl 
 
 let explictSystemVerification (config : Configuration) systemPaths propPath m  = 
     let sw: System.Diagnostics.Stopwatch = System.Diagnostics.Stopwatch()
