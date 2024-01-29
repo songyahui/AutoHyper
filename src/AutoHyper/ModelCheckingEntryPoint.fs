@@ -35,6 +35,8 @@ open HyperLTL.SymbolicHyperLTL
 open ModelChecking
 
 
+type Record = list <(int * int * DNF<int>)>
+
 let private string_of_set_elements (list: Set<int>)  =
     list 
         |> Set.map (fun x -> string x)
@@ -91,6 +93,18 @@ let private existRecord
         else ()
 
     Return
+
+let rec recordReoccur 
+    (history:Record) 
+    (currentProduct: (int * int)) : bool =
+    let (systemStates, nbaState) = currentProduct
+    match history with 
+    | [] -> false 
+    | (his_sys, his_nba, _)::tail -> 
+        if his_sys = systemStates && his_nba = nbaState then true 
+        else recordReoccur tail currentProduct
+
+
 
 
 let rec private findIndexofAEleFromAList (list:string list) (name:string) =
@@ -220,21 +234,94 @@ let string_of_property_automata (nba : NBA<int, (String * int)>) =
     // let nbaprinting = NBA.toHoaString (fun a-> string a) (fun (a, i) -> a + "_" + string i) nba
     printfn$"\n(nba_printing: %s{s.ToString()})" 
 
-type Record = list <(int * int * DNF<int>)>
+(* sys_state, nba_state, dnf_label *)
 
 let rec findAllTheCycles 
-    (mappings:list<(String * int * int * int)>) 
-    (config : Configuration) 
-    (ts : TransitionSystem<String>) 
-    (nba : NBA<int, (String * int)>) 
-    (sysStates:Set<int>) 
-    (nbaStates:Set<int>) 
-    (history: Record) : list <Record> = 
+    (mappings:list<(String * int * int * int)>) (config : Configuration) 
+    (ts : TransitionSystem<String>)  (nba : NBA<int, (String * int)>) 
+    (sysStates:Set<int>)  (nbaStates:Set<int>) 
+    (history: Record) (traceIndex:int) : list <Record> = 
+
+    let (nextSystemStates:Set<(Set<int> * Set<int>)>) = findNextStatesFromTransitionSystem ts sysStates
+    let (systemTransitions:list<(int * int * Set<int>)>) = 
+        (* list of tuples: (current state, next state, transition label) *)
+        nextSystemStates 
+        |> Set.toList 
+        |> List.map (fun (successors, sys_label) -> 
+            successors 
+            |> Set.toList 
+            |> List.map (fun successor -> 
+                sysStates
+                |> Set.toList 
+                |> List.map (fun current -> (current, successor, sys_label))
+                )
+            |> List.concat    
+            )
+        |> List.concat 
+
+    let (nextNbaStates:Set<(DNF<int> * int) list>) = findNextStatesFromNBA nba nbaStates 
+    let (nbaTransitions:list<(int * int * DNF<int>)>) = 
+        (* list of tuples: (current state, next state, transition label) *)
+        nextNbaStates
+        |> Set.toList 
+        |> List.map 
+            (fun li ->  
+                li 
+                |> List.map (fun (dnf, successor) -> 
+                    nbaStates
+                    |> Set.toList 
+                    |> List.map (fun current -> (current, successor, dnf))
+                    )
+                |> List.concat
+            )
+        |> List.concat
 
 
-    
+    let rec iterateNBATrans (sysTran:(int * int * Set<int>)) (nbaTrans:list<(int * int * DNF<int>)>) : list<Record> = 
+        let (sys_current, sys_next, sys_label) = sysTran
+        match nbaTrans with 
+        | [] -> [] 
+        | hd::tail -> 
+          let (nba_current, nba_next, nab_label) = hd
+          if recordReoccur history (sys_current, nba_current) then [history] 
+          else 
+            let var_name_ap_system_pos = findCurrentTrace mappings (traceIndex)
+            let (sys_positions:list<int>) = 
+                        var_name_ap_system_pos 
+                        |> List.map (fun (var_name, ap_nba_pos, ap_system_pos) -> 
+                            //printfn "var_name :%s" (var_name)
+                            //printfn "ap_nba_pos:%d" (ap_nba_pos)
+                            //printfn "ap_system_pos:%d" (ap_system_pos)
+                            ap_system_pos)
+            let (sys_positions_valuations:list<int * bool>) = 
+                        sys_positions
+                        |> List.map (fun sys_pos -> (sys_pos, Set.exists (fun i -> i = sys_pos) sys_label)) 
+            let (dnf_after_aline_with_system:DNF<int>) = dnfWithConstrains nab_label sys_positions_valuations
+
+            let (history':Record) = history @ [(sys_next, nba_next, dnf_after_aline_with_system)]
+
+            findAllTheCycles mappings config ts nba (Set.ofList [sys_next]) (Set.ofList [nba_next]) history' traceIndex
+
+    let rec iterateSysTrans (sysTrans:list<(int * int * Set<int>)>) (nbaTrans:list<(int * int * DNF<int>)>) : list<Record> = 
+        match sysTrans with 
+        | [] -> []
+        | hd::tail -> iterateNBATrans hd nbaTrans @ iterateSysTrans tail nbaTrans
+
+
+    iterateSysTrans systemTransitions nbaTransitions
+
 
     [history]
+
+let rec string_of_record (record:Record) = 
+    record
+    |> List.map (fun (a, b, dnf) ->  string a  ^ ","^ string b ^ ","^ DNF.print dnf)
+    |> Util.combineStringsWithSeperator "; "
+
+let rec string_of_records (records:list<Record>) = 
+    records
+    |> List.map (fun a -> string_of_record a)
+    |> Util.combineStringsWithSeperator "\n"
 
 
 
@@ -252,7 +339,8 @@ let rec private on_the_Fly_HyperLTL_MC
         string_of_transition_system ts 
         string_of_property_automata nba
 
-        let traces = findAllTheCycles mappings config ts nba (ts.InitialStates) (nba.InitialStates) [] 
+        let traces = findAllTheCycles mappings config ts nba (ts.InitialStates) (nba.InitialStates) [] traceIndex
+        printfn "traces : %s" (string_of_records traces) 
 
         let memorization = new Dictionary<int, (Set<int> * Set<int> * int * DNF<int>)>() 
         let (product: (Set<int> * Set<int> * int * DNF<int>) )  = generateNextStep (ts.InitialStates) (nba.InitialStates) ts nba mappings traceIndex
